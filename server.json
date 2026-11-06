@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.0xmortuex/kubelint-mcp",
+  "description": "Statically lint and explain Kubernetes manifests: rule IDs, line numbers, concrete fixes, RBAC and reference checks. No cluster or kubectl needed.",
+  "repository": {
+    "url": "https://github.com/0xmortuex/kubelint-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "kubelint-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

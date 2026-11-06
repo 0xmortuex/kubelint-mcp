@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        exclude:
+          - os: windows-latest
+            python-version: "3.10"
+          - os: windows-latest
+            python-version: "3.11"
+          - os: windows-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.10"
+          - os: macos-latest
+            python-version: "3.11"
+          - os: macos-latest
+            python-version: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install "ruff==0.16.0" "mypy==2.3.0" ".[test]"
+      - run: ruff check src tests
+      - run: mypy --strict src
+      - run: pytest tests -v
+
+  helm-integration:
+    # The one external binary render_helm can call: exercise it for real on Linux.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz | tar xz && sudo mv linux-amd64/helm /usr/local/bin/helm && helm version
+      - run: pip install ".[test]"
+      - run: pytest tests/test_helm.py -v -rs

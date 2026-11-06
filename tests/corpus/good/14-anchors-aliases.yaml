@@ -1,0 +1,97 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: anchors
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shared
+  namespace: anchors
+automountServiceAccountToken: false
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: anchors
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+x-defaults:
+  container-security: &container-security
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+  resources: &small
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 128Mi}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shared
+  namespace: anchors
+  labels:
+    app: shared
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shared
+  template:
+    metadata:
+      labels:
+        app: shared
+    spec:
+      serviceAccountName: shared
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: one
+          image: registry.example.com/shared/one:1.0.0@sha256:5555555555555555555555555555555555555555555555555555555555555555
+          ports:
+            - name: http
+              containerPort: 8080
+          resources: *small
+          securityContext: *container-security
+          livenessProbe: &probe
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe: *probe
+        - name: two
+          image: registry.example.com/shared/two:1.0.0@sha256:6666666666666666666666666666666666666666666666666666666666666666
+          ports:
+            - name: metrics
+              containerPort: 9090
+          resources: *small
+          securityContext: *container-security
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: shared
+  namespace: anchors
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: shared

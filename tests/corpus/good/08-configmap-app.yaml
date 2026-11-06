@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: docs
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: docs
+  namespace: docs
+automountServiceAccountToken: false
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: docs
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docs-config
+  namespace: docs
+data:
+  LOG_LEVEL: info
+  site.conf: |
+    server { listen 8080; }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docs
+  namespace: docs
+  labels:
+    app: docs
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: docs
+  template:
+    metadata:
+      labels:
+        app: docs
+    spec:
+      serviceAccountName: docs
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: conf
+          configMap:
+            name: docs-config
+            items:
+              - key: site.conf
+                path: site.conf
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: docs
+          image: registry.example.com/platform/nginx-unprivileged:1.27.2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: docs-config
+          env:
+            - name: LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: docs-config
+                  key: LOG_LEVEL
+          volumeMounts:
+            - name: conf
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docs
+  namespace: docs
+spec:
+  type: ClusterIP
+  selector:
+    app: docs
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: docs
+  namespace: docs
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: docs

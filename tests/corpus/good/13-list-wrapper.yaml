@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lists
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: tiny
+      namespace: lists
+    automountServiceAccountToken: false
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: tiny
+      namespace: lists
+      labels:
+        app: tiny
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: tiny
+      template:
+        metadata:
+          labels:
+            app: tiny
+        spec:
+          serviceAccountName: tiny
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: tiny
+              image: registry.example.com/platform/nginx-unprivileged:1.27.2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              ports:
+                - name: http
+                  containerPort: 8080
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              livenessProbe:
+                httpGet:
+                  path: /healthz
+                  port: http
+              readinessProbe:
+                httpGet:
+                  path: /ready
+                  port: http
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: tiny
+      namespace: lists
+    spec:
+      maxUnavailable: 1
+      selector:
+        matchLabels:
+          app: tiny
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: default-deny
+      namespace: lists
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress

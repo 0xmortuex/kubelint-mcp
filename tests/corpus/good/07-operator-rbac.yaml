@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tools
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: tools
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-reaper
+  namespace: tools
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reaper
+  namespace: tools
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-reaper
+  namespace: tools
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pod-reaper
+subjects:
+  - kind: ServiceAccount
+    name: pod-reaper
+    namespace: tools
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-reaper
+  namespace: tools
+  labels:
+    app: pod-reaper
+spec:
+  replicas: 1 # kubelint-ignore: K8S1018
+  selector:
+    matchLabels:
+      app: pod-reaper
+  template:
+    metadata:
+      labels:
+        app: pod-reaper
+    spec:
+      serviceAccountName: pod-reaper
+      automountServiceAccountToken: true # kubelint-ignore: K8S1024
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: reaper
+          image: registry.example.com/tools/pod-reaper:0.4.2@sha256:1111111111111111111111111111111111111111111111111111111111111111
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
